@@ -1,0 +1,23 @@
+# Python 3.12.3. Install torch from the CUDA index that matches your driver, e.g.
+#   pip install torch==2.11.0 --index-url https://download.pytorch.org/whl/cu128
+# then: pip install -r requirements.txt
+polars==1.44.2
+pyarrow==25.0.1
+numpy==2.5.3
+scipy==1.18.1
+scikit-learn==1.9.1
+sparse-dot-topn==1.2.0
+lightgbm==4.7.0
+RapidFuzz==3.14.6
+jellyfish==1.2.1
+regex==2026.9.10
+anyascii==0.3.3
+wordninja==2.0.0
+torch==2.11.0
+transformers==5.17.0
+tokenizers==0.23.2
+safetensors==0.8.0
+accelerate==1.15.0
+sentence-transformers==6.1.0
+huggingface_hub==1.33.0
+tqdm==4.70.1

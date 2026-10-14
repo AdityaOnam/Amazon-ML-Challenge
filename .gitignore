@@ -1,0 +1,22 @@
+# Challenge data (provided by the organisers, not redistributed)
+data/*
+!data/.gitkeep
+
+# Large generated outputs (151 MB / 98 MB; GitHub rejects files > 100 MB)
+# Attach them to a GitHub Release instead, see output/README.md
+output/*.tsv
+
+# Pipeline working directories created by run_pipeline.sh
+cache/
+runs/
+models/
+research/
+src/reranker/bundle*/
+src/reranker/ckpt/
+src/reranker/results/
+src/reranker/work/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
