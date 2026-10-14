@@ -3,7 +3,7 @@
 # Entity Resolution at Scale
 ### Amazon ML Challenge 2026 · Team 01BIT
 
-**144 million candidate pairs → one owner per record, at 0.9896 macro F0.5**
+**Turning 144 million candidate pairs into one owner per record at 0.9896 macro F0.5**
 
 ![Python](https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white)
 ![LightGBM](https://img.shields.io/badge/LightGBM-4.7-9ACD32)
@@ -13,37 +13,88 @@
 
 </div>
 
-![Solution overview](docs/assets/overview.png)
+---
 
-## The task
+## At a glance
 
-Three business-record tables (S1, S2, S3) describe the same real-world companies with noisy names and addresses: legal-form drift, abbreviations, typos, native-script transliteration, and house numbers that differ by one digit. For every S1 record, find all its matching S2/S3 records, never matching across countries.
+| Public leaderboard | Held-out macro F0.5 | Blocking recall | Pair reduction |
+|:---:|:---:|:---:|:---:|
+| **0.989635** | **0.99180** | **98.8%** | **144.3M → 10.0M** |
+| final submission (F0) | US + India, honest cross-fit | union of all retrieval routes | **14.4×** fewer pairs, **0** F0.5 lost |
 
-The metric is **macro F0.5**, which weights precision over recall. A single wrong merge on a singleton S1 costs a full point for that S1, so the whole design is tuned for precision first.
+| Candidates per S1 | S1 records resolved | Matches submitted | Model size |
+|:---:|:---:|:---:|:---:|
+| **83.3 → 5.80** | **1,732,544** | **5,843,770** | **≤ 0.6B** params each |
+| after meta-blocking | test set, 3 countries | S1 → S2/S3 links | no API models, no external data |
 
-France has **no training labels**. It is handled with language-aware normalisation built only from the test inputs and a rule against sibling-business confusions.
+---
+
+## Objectives
+
+| # | Objective | Why it matters | Outcome |
+|:-:|---|---|---|
+| 1 | **Maximise macro F0.5** | The metric weights precision over recall. One wrong merge on a singleton S1 costs that S1 a full point. | **0.99180** held-out, **0.989635** public LB |
+| 2 | **Keep recall high at the blocking stage** | A true match that is never retrieved can never be predicted. | **98.8%** union recall on the held-out fold |
+| 3 | **Make heavy models affordable** | Running cross-encoders on 144M pairs is not feasible. | Meta-blocking cuts to **10.0M** pairs with a **byte-identical** final output |
+| 4 | **Prevent validation leakage** | Stacked models trained on in-sample scores overfit and do not transfer. | Every score is **cross-fitted**, and held-out gains carried over to the leaderboard |
+| 5 | **Generalise to an unseen country** | France has **no training labels** at all. | Language-aware normalisation from test inputs only: **+3,896 / −413** pairs from filler cleaning |
+| 6 | **Stay within competition rules** | Models must be open, under 8B parameters, with no external or LLM-generated data. | All models Apache-2.0 / MIT, the largest at **596M** parameters |
+
+---
+
+## The problem
+
+Three business-record tables (**S1**, **S2**, **S3**) describe the same real-world companies, but with noisy names and addresses. For every S1 record, the task is to find all matching S2/S3 records, never matching across countries.
+
+| Noise source | Example |
+|---|---|
+| Legal-form drift | `Pvt Ltd` ↔ `Private Limited` ↔ `Corp` |
+| Abbreviations and reordering | `Rd` ↔ `Road`, landmarks such as `Near SBI ATM` |
+| Transliteration | Devanagari and other native scripts ↔ Latin |
+| Domain-style names | `abcmotors.com` |
+| House-number edits | a one-digit difference is often a **different** business |
+| Missing addresses | many candidates have an empty address field |
+
+**Where the residual loss sits:** about **63%** of the remaining validation loss comes from candidates with no address whose name is shared by several S1s. Nothing in the records says which S1 owns them, so these are close to the irreducible floor.
+
+---
 
 ## Results
 
-| | Score |
-|---|---:|
-| Public leaderboard (final, F0) | **0.989635** |
-| Honest held-out macro F0.5, US + India | **0.99180** (India 0.99227, US 0.99149) |
-| Candidates per S1 after meta-blocking | **5.80** (from 83.3) |
-| Matches in the final submission | 5,843,770 |
+### Headline scores
 
-### What each stage adds (honest held-out, US/India)
+| Metric | Score |
+|---|---:|
+| Public leaderboard, final submission (F0) | **0.989635** |
+| Honest held-out macro F0.5, US + India | **0.99180** |
+| ↳ India | 0.99227 |
+| ↳ United States | 0.99149 |
+
+### Contribution of each stage (honest held-out, US + India)
 
 | Stage | F0.5 | Gain |
 |---|---:|---:|
-| Stage-1 LightGBM only | 0.98145 | |
-| + cross-encoder stack | 0.99067 | +0.00922 |
+| Stage-1 LightGBM (69 features) | 0.98145 | baseline |
+| + cross-encoder stack | 0.99067 | **+0.00922** |
 | + stage-2 re-scorer | 0.99093 | +0.00026 |
 | + v4 extra pairs | 0.99123 | +0.00030 |
 | + recall routes | 0.99168 | +0.00045 |
 | + route re-scoring | **0.99180** | +0.00012 |
+| **Total gain over stage 1** | | **+0.01035** |
 
-## How it works
+### Meta-blocking: fewer pairs, same accuracy
+
+| First-stage cut | Pairs per S1 | F0.5 |
+|---|---:|---:|
+| none | 89.1 | 0.99180 |
+| p ≥ 0.0001 | 7.0 | 0.99180 |
+| **p ≥ 0.001 (used)** | **5.5** | **0.99180** |
+| p ≥ 0.005 | 4.8 | 0.99177 |
+| p ≥ 0.02 | 4.0 | 0.99165 |
+
+---
+
+## Pipeline
 
 ```mermaid
 flowchart LR
@@ -54,21 +105,90 @@ flowchart LR
     E --> F["Assign<br/>one owner per candidate<br/>threshold 0.75"]
 ```
 
-1. **Normalise:** legal forms, abbreviations, house numbers, native script to Latin. France gets its own filler-word and run-together-domain handling.
-2. **Retrieve:** TF-IDF on name, address and mixed text, exact keys, and Qwen3-Embedding-0.6B nearest neighbours, always within one country. Union recall on the held-out fold is 98.8%.
-3. **Meta-blocking:** a lightweight LightGBM prunes 144.3M pairs to 10.0M, and the final test output is byte-identical to the uncut run. Heavy models only run on what survives.
-4. **Rerank:** four fine-tuned cross-encoders (bge-reranker-v2-m3 ×3, Qwen3-Reranker-0.6B) plus a listwise "select" model that reads a candidate together with all S1s competing for it.
-5. **Stack and re-score:** a cross-fitted LightGBM stacker, then a stage-2 model that uses each S1's other confident matches and competition between S1s.
-6. **Assign:** one owner per candidate at the F0.5-optimal threshold of 0.75.
+| Step | What it does | Key number |
+|:-:|---|---|
+| **1. Normalise** | Legal forms, abbreviations, house numbers, native script to Latin. France gets its own filler-word and run-together-domain handling. | US, India, France |
+| **2. Retrieve** | TF-IDF on name, address and mixed text, exact keys, and Qwen3-Embedding-0.6B nearest neighbours, always within one country. | **144.3M** pairs, **98.8%** recall |
+| **3. Meta-block** | A lightweight LightGBM keeps only pairs with p ≥ 0.001, so heavy models see a fraction of the data. | **10.0M** pairs, **5.80** per S1 |
+| **4. Rerank** | Four fine-tuned cross-encoders, plus a listwise *select* model that reads one candidate with all competing S1s. | **4** cross-encoders + **1** select model |
+| **5. Stack and re-score** | A 5-fold cross-fitted LightGBM stacker, then a stage-2 model using each S1's confident matches and S1-vs-S1 competition. | **+0.00026** from stage 2 |
+| **6. Assign** | One owner per candidate at the F0.5-optimal threshold. | threshold **0.75** |
 
-### Key ideas
+---
 
-- **Meta-blocking costs no accuracy.** Cutting from 89 to 5.5 pairs per S1 leaves honest F0.5 unchanged (0.99180) while the heavy models see far fewer pairs.
-- **Honest cross-fitting everywhere.** Every reranker score comes from a model that never saw that S1's labels, so the stacker trains on test-like scores and validation gains transferred to the leaderboard.
-- **Listwise selection.** Pairwise models score each (S1, candidate) independently. The select model sees the whole contest and resolves sibling-S1 conflicts, about 10% of the residual loss.
-- **One filler word flips the verdict in France.** 14% of French records carry generator-injected filler words that the rerankers read as a different business. Stripping them at inference time added 3,896 pairs and removed 413, with no retraining.
+## Key technical contributions
 
-See [docs/METHODOLOGY.md](docs/METHODOLOGY.md) for the full write-up: problem analysis, blocking trade-offs, features, models, licences, error analysis, and everything tried and not adopted.
+> **1. Meta-blocking at zero accuracy cost**
+> Cutting from **89.1 to 5.5** pairs per S1 leaves honest F0.5 unchanged at **0.99180**, and the final test output is byte-identical to the uncut run.
+
+> **2. Honest cross-fitting everywhere**
+> Train S1s are split into two halves. Each reranker is fine-tuned on one half and scores the other, so every score comes from a model that never saw that S1's labels. The stacker trains on test-like scores and validation gains transfer to the leaderboard.
+
+> **3. Listwise candidate selection**
+> Pairwise models score each (S1, candidate) independently. The select model sees the whole contest (one candidate, up to **6** competing S1s) and resolves sibling-S1 conflicts, which account for about **10%** of the residual loss.
+
+> **4. Second-pass recall routes**
+> Confident first-pass matches act as anchors to search for an S1's remaining matches, recovering blocking misses in crowded-name groups at **96%** precision.
+
+> **5. Unseen-country adaptation without labels**
+> **14%** of French records carry generator-injected filler words that the rerankers read as a different business. Stripping them at inference time re-scored **197,520** pairs, adding **3,896** and removing **413**, with no retraining.
+
+The full write-up (problem analysis, blocking trade-offs, features, models, licences, error analysis and everything tried and not adopted) is in [docs/METHODOLOGY.md](docs/METHODOLOGY.md).
+
+---
+
+## Quick start
+
+```bash
+git clone https://github.com/AdityaOnam/Amazon-ML-Challenge.git
+cd Amazon-ML-Challenge
+
+python -m venv .venv && source .venv/bin/activate
+pip install torch==2.11.0 --index-url https://download.pytorch.org/whl/cu128   # match your CUDA driver
+pip install -r requirements.txt
+
+# place the challenge data under data/dataset/{train,test}/ (layout in docs/REPRODUCTION.md)
+bash run_pipeline.sh
+```
+
+### System requirements
+
+| Resource | Requirement |
+|---|---|
+| Python | 3.12 on Linux |
+| GPU | 1 × CUDA GPU, **24 GB** (20 GB works with smaller batches) |
+| CPU | up to **64** threads |
+| RAM | about **200 GB** at peak |
+| Run time | roughly **20–30 h** on an A100 / L40S-class GPU |
+| Network | only to download pretrained weights from Hugging Face |
+
+The per-step code map and environment details are in [docs/REPRODUCTION.md](docs/REPRODUCTION.md).
+
+---
+
+## Output
+
+| File | Content | Size |
+|---|---|---|
+| `output/matching_results.tsv` | `source1_entity_id` → comma-separated matched S2/S3 ids (final submission) | 5,843,770 matches |
+| `output/candidate_pairs.tsv` | pairs that survived meta-blocking | 10,049,484 pairs |
+
+Both files are too large for a normal git push (up to 152 MB), so they are git-ignored. Download them from the Releases page or regenerate them with `run_pipeline.sh`.
+
+---
+
+## Models
+
+| Model | Role | Parameters | Licence |
+|---|---|---:|---|
+| Qwen/Qwen3-Embedding-0.6B | blocking embeddings | 0.6B | Apache-2.0 |
+| BAAI/bge-reranker-v2-m3 | 3 cross-encoders + 4 listwise select models | 568M | Apache-2.0 |
+| Qwen/Qwen3-Reranker-0.6B | 1 cross-encoder | 596M | Apache-2.0 |
+| LightGBM | stage 1, stacker, stage 2, route models | – | MIT |
+
+All models are under 8B parameters. No API models, no external data and no LLM-generated data were used.
+
+---
 
 ## Repository layout
 
@@ -86,50 +206,15 @@ See [docs/METHODOLOGY.md](docs/METHODOLOGY.md) for the full write-up: problem an
 │   └── routes/                # second-pass shortlist routes
 ├── docs/
 │   ├── METHODOLOGY.md         # full solution write-up
-│   ├── REPRODUCTION.md        # environment, run time, code map
-│   └── assets/overview.png
-├── data/                      # put the challenge data here (git-ignored)
+│   └── REPRODUCTION.md        # environment, run time, code map
+├── data/                      # challenge data goes here (git-ignored)
 └── output/                    # result files (git-ignored, see output/README.md)
 ```
 
-## Quick start
+---
 
-```bash
-git clone https://github.com/AdityaOnam/Amazon-ML-Challenge.git
-cd Amazon-ML-Challenge
+<div align="center">
 
-python -m venv .venv && source .venv/bin/activate
-pip install torch==2.11.0 --index-url https://download.pytorch.org/whl/cu128   # match your CUDA driver
-pip install -r requirements.txt
+**Team 01BIT** · Amazon ML Challenge 2026 · [github.com/AdityaOnam/Amazon-ML-Challenge](https://github.com/AdityaOnam/Amazon-ML-Challenge)
 
-# place the challenge data under data/dataset/{train,test}/ (layout in docs/REPRODUCTION.md)
-bash run_pipeline.sh
-```
-
-**Requirements:** Python 3.12, Linux, one CUDA GPU with 24 GB (20 GB works with smaller batches), up to 64 CPU threads and about 200 GB RAM at peak. A full run takes roughly 20–30 h on an A100/L40S-class GPU. The only network access is downloading pretrained weights from Hugging Face.
-
-Full details, including the per-step code map, are in [docs/REPRODUCTION.md](docs/REPRODUCTION.md).
-
-## Output
-
-| File | Content |
-|---|---|
-| `output/matching_results.tsv` | `source1_entity_id` → comma-separated matched S2/S3 ids (final submission) |
-| `output/candidate_pairs.tsv` | the 10.0M pairs that survived meta-blocking |
-
-Both files are too large for a normal git push (up to 152 MB), so they are git-ignored. Download them from the Releases page or regenerate them.
-
-## Models
-
-| Model | Use | Licence |
-|---|---|---|
-| Qwen/Qwen3-Embedding-0.6B | blocking embeddings | Apache-2.0 |
-| BAAI/bge-reranker-v2-m3 | 3 cross-encoders + 4 listwise select models | Apache-2.0 |
-| Qwen/Qwen3-Reranker-0.6B | 1 cross-encoder | Apache-2.0 |
-| LightGBM | stage 1, stacker, stage 2, route models | MIT |
-
-All models are under 8B parameters. No API models, no external data, no LLM-generated data.
-
-## Team
-
-**01BIT** · Amazon ML Challenge 2026 · [github.com/AdityaOnam/Amazon-ML-Challenge](https://github.com/AdityaOnam/Amazon-ML-Challenge)
+</div>
