@@ -29,6 +29,14 @@
 
 ---
 
+## Team 01BIT
+
+| Member | Institute | GitHub |
+|---|---|---|---|
+| **[Aditya Gupta]** | [Indian Institute of Technology Patna] | [@Adi-KernelX](https://github.com/adi-kernelx) |
+
+---
+
 ## Objectives
 
 | # | Objective | Why it matters | Outcome |
