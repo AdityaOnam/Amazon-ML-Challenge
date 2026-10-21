@@ -1,5 +1,7 @@
 <div align="center">
 
+![Amazon ML Challenge 2026](docs/assets/banner.webp)
+
 # Entity Resolution at Scale
 ### Amazon ML Challenge 2026 · Team 01BIT
 
@@ -31,9 +33,11 @@
 
 ## Team 01BIT
 
-| Member | Institute | GitHub |
-|---|---|---|
-| **Aditya Gupta** | Indian Institute of Technology Patna | [@Adi-KernelX](https://github.com/Adi-KernelX) |
+| Member | Role | Institute | GitHub |
+|---|---|---|---|
+| **Aditya Onam** | Team lead | — | [@AdityaOnam](https://github.com/AdityaOnam) |
+| **Aditya Gupta** | Team member | Indian Institute of Technology Patna | [@Adi-KernelX](https://github.com/Adi-KernelX) |
+| **Aakarsh Sinha** | Team member | — | — |
 
 ---
 
@@ -214,7 +218,8 @@ All models are under 8B parameters. No API models, no external data and no LLM-g
 │   └── routes/                # second-pass shortlist routes
 ├── docs/
 │   ├── METHODOLOGY.md         # full solution write-up
-│   └── REPRODUCTION.md        # environment, run time, code map
+│   ├── REPRODUCTION.md        # environment, run time, code map
+│   └── assets/banner.webp     # README banner
 ├── data/                      # challenge data goes here (git-ignored)
 └── output/                    # result files (git-ignored, see output/README.md)
 ```
